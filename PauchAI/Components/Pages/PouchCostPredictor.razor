@@ -1,0 +1,300 @@
+@page "/pouch-cost"
+@rendermode InteractiveServer
+@using PauchAI.Models
+@using PauchAI.Services
+@inject PouchPredictionService PredictionService
+
+<PageTitle>Pouch Cost Estimator</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="row mb-3">
+        <div class="col">
+            <h2 class="fw-bold mb-1">Pouch Cost Estimator</h2>
+            <p class="text-muted small mb-0">Configure your pouch below to get an instant AI-powered cost prediction.</p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+
+        <!-- ── Form ── -->
+        <div class="col-lg-7">
+            <EditForm Model="Input" OnValidSubmit="CalculateCostAsync">
+                <DataAnnotationsValidator />
+
+                <!-- Dimensions -->
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header fw-semibold bg-light">Dimensions</div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-sm-4">
+                                <label class="form-label">Width (cm)</label>
+                                <InputNumber @bind-Value="Input.Width" class="form-control" />
+                                <ValidationMessage For="() => Input.Width" class="text-danger small" />
+                            </div>
+                            <div class="col-sm-4">
+                                <label class="form-label">Height (cm)</label>
+                                <InputNumber @bind-Value="Input.Height" class="form-control" />
+                                <ValidationMessage For="() => Input.Height" class="text-danger small" />
+                            </div>
+                            <div class="col-sm-4">
+                                <label class="form-label">Gusset (cm)</label>
+                                <InputNumber @bind-Value="Input.Gusset" class="form-control" />
+                                <div class="form-text">0 for flat pouches</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Material -->
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header fw-semibold bg-light">Material</div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <label class="form-label">Material Type</label>
+                                <InputSelect @bind-Value="Input.MaterialType" class="form-select">
+                                    <option value="" disabled hidden>-- Select --</option>
+                                    <option value="PET+PE">PET+PE</option>
+                                    <option value="BOPP+CPP">BOPP+CPP</option>
+                                    <option value="Paper">Paper</option>
+                                    <option value="Foil">Foil</option>
+                                </InputSelect>
+                                <ValidationMessage For="() => Input.MaterialType" class="text-danger small" />
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label">Thickness (micron)</label>
+                                <InputNumber @bind-Value="Input.Thickness" class="form-control" />
+                                <ValidationMessage For="() => Input.Thickness" class="text-danger small" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pouch Configuration -->
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header fw-semibold bg-light">Pouch Configuration</div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <label class="form-label">Pouch Type</label>
+                                <InputSelect @bind-Value="Input.PouchType" class="form-select">
+                                    <option value="3-side-seal">3-Side Seal</option>
+                                    <option value="stand-up">Stand-Up (Doy Pack)</option>
+                                    <option value="center-seal">Center Seal</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label">Printing Type</label>
+                                <InputSelect @bind-Value="Input.PrintingType" class="form-select">
+                                    <option value="none">None (Plain)</option>
+                                    <option value="flexo">Flexo</option>
+                                    <option value="rotogravure">Rotogravure</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-12 pt-1">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch"
+                                           id="zipLockSwitch" @bind="ZipLockBool" />
+                                    <label class="form-check-label" for="zipLockSwitch">
+                                        Zip Lock / Resealable
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Order Quantity -->
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header fw-semibold bg-light">Order Quantity</div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <label class="form-label">Number of Pouches</label>
+                                <InputNumber @bind-Value="Input.Quantity" class="form-control" />
+                                <ValidationMessage For="() => Input.Quantity" class="text-danger small" />
+                                <div class="form-text">Higher quantities reduce per-unit cost</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg w-100" disabled="@IsLoading">
+                    @if (IsLoading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    }
+                    Estimate Cost
+                </button>
+            </EditForm>
+        </div>
+
+        <!-- ── Result Panel ── -->
+        <div class="col-lg-5">
+
+            @if (ErrorMessage is not null)
+            {
+                <div class="alert alert-danger" role="alert">
+                    <strong>Prediction failed.</strong><br />@ErrorMessage
+                </div>
+            }
+
+            @if (Result is not null)
+            {
+                <div class="card border-success shadow">
+                    <div class="card-header bg-success text-white fw-semibold">
+                        Cost Prediction
+                    </div>
+                    <div class="card-body text-center py-4">
+                        <p class="text-muted mb-1 small text-uppercase letter-spacing-1">Cost Per Pouch</p>
+                        <h1 class="display-4 fw-bold text-success">
+                            &#8377;@Result.PredictedCostPerPouch.ToString("N4")
+                        </h1>
+                        <hr />
+                        <div class="d-flex justify-content-between px-2 mb-2">
+                            <span class="text-muted">Quantity</span>
+                            <strong>@Input.Quantity.ToString("N0") pcs</strong>
+                        </div>
+                        <div class="d-flex justify-content-between px-2">
+                            <span class="text-muted">Total Order Value</span>
+                            <strong class="text-success fs-5">&#8377;@Result.TotalEstimatedCost.ToString("N2")</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm mt-3">
+                    <div class="card-header fw-semibold bg-light">Specification Summary</div>
+                    <ul class="list-group list-group-flush small">
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span class="text-muted">Dimensions</span>
+                            <span>@Input.Width &times; @Input.Height cm@(Input.Gusset > 0 ? $" + {Input.Gusset}G" : "")</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span class="text-muted">Material</span>
+                            <span>@Input.MaterialType &mdash; @Input.Thickness µm</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span class="text-muted">Pouch Type</span>
+                            <span>@Input.PouchType</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span class="text-muted">Printing</span>
+                            <span>@Input.PrintingType</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span class="text-muted">Zip Lock</span>
+                            <span>@(Input.ZipLock == "yes" ? "Yes" : "No")</span>
+                        </li>
+                    </ul>
+                </div>
+            }
+            else if (!IsLoading)
+            {
+                <div class="card border-secondary h-100 d-flex align-items-center justify-content-center"
+                     style="min-height: 320px; border-style: dashed !important;">
+                    <div class="text-center text-muted p-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor"
+                             class="bi bi-bag mb-3 opacity-50" viewBox="0 0 16 16">
+                            <path d="M8 1a2.5 2.5 0 0 1 2.5 2.5V4h-5v-.5A2.5 2.5 0 0 1 8 1zm3.5 3v-.5a3.5 3.5 0 1 0-7 0V4H1v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4h-3.5zM2 5h12v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5z"/>
+                        </svg>
+                        <p class="mb-0">Fill in the specs and click<br /><strong>Estimate Cost</strong> to see the prediction.</p>
+                    </div>
+                </div>
+            }
+        </div>
+
+    </div>
+</div>
+
+@code {
+    // Pre-fill from search results via query string
+    [SupplyParameterFromQuery] public double? Width        { get; set; }
+    [SupplyParameterFromQuery] public double? Height       { get; set; }
+    [SupplyParameterFromQuery] public double? Gusset       { get; set; }
+    [SupplyParameterFromQuery] public string? MaterialType { get; set; }
+    [SupplyParameterFromQuery] public double? Thickness    { get; set; }
+    [SupplyParameterFromQuery] public string? PrintingType { get; set; }
+    [SupplyParameterFromQuery] public string? PouchType    { get; set; }
+    [SupplyParameterFromQuery] public string? ZipLock      { get; set; }
+
+    private PouchInput Input { get; set; } = new();
+    private PredictionResult? Result;
+    private bool IsLoading;
+    private string? ErrorMessage;
+    private bool ZipLockBool;
+
+    protected override void OnParametersSet()
+    {
+        if (Width        is not null) Input.Width        = Width.Value;
+        if (Height       is not null) Input.Height       = Height.Value;
+        if (Gusset       is not null) Input.Gusset       = Gusset.Value;
+        if (MaterialType is not null) Input.MaterialType = ToApiMaterial(MaterialType);
+        if (Thickness    is not null) Input.Thickness    = Thickness.Value;
+        if (PrintingType is not null) Input.PrintingType = ToApiPrinting(PrintingType);
+        if (PouchType    is not null) Input.PouchType    = ToApiPouchType(PouchType);
+        if (ZipLock      is not null)
+        {
+            Input.ZipLock = ZipLock;
+            ZipLockBool   = ZipLock == "yes";
+        }
+    }
+
+    private static string ToApiPrinting(string v) => v.ToLowerInvariant().Trim() switch
+    {
+        "flexo" or "flexographic"                    => "flexo",
+        "rotogravure" or "gravure" or "full color"
+            or "full colour" or "digital"            => "rotogravure",
+        _                                            => "none",
+    };
+
+    private static string ToApiPouchType(string v) => v.ToLowerInvariant().Trim() switch
+    {
+        "3-side-seal" or "3-side seal" or "3 side seal"
+            or "three side seal"                     => "3-side-seal",
+        "stand-up" or "stand up" or "standup"
+            or "doypack" or "doy pack"               => "stand-up",
+        "center-seal" or "center seal" or "centre seal"
+            or "back seal" or "fin seal"             => "center-seal",
+        _                                            => "3-side-seal",
+    };
+
+    private static string ToApiMaterial(string v) => v.ToUpperInvariant().Trim() switch
+    {
+        "PET+PE" or "PETPE"                          => "PET+PE",
+        "BOPP+CPP" or "BOPPCPP"
+            or "MET BOPP+CPP" or "METBOPP+CPP"      => "BOPP+CPP",
+        "PAPER" or "KRAFT+PE" or "KRAFT PE"          => "Paper",
+        "FOIL" or "PET+ALU+PE" or "ALU"
+            or "ALUMINIUM" or "ALUMINUM"             => "Foil",
+        _                                            => "PET+PE",
+    };
+
+    private async Task CalculateCostAsync()
+    {
+        IsLoading = true;
+        ErrorMessage = null;
+        Result = null;
+        Input.ZipLock = ZipLockBool ? "yes" : "no";
+
+        try
+        {
+            Result = await PredictionService.PredictAsync(Input);
+        }
+        catch (HttpRequestException)
+        {
+            ErrorMessage = "Cannot reach the prediction service. Make sure the Python API is running on port 8000 (uvicorn api.main:app --port 8000).";
+        }
+        catch (InvalidOperationException ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+}

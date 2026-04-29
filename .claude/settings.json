@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Program Files/PostgreSQL/17/lib/**)",
+      "Read(//c/Program Files/PostgreSQL/17/share/extension/**)",
+      "Bash(pip --version)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(python -m uvicorn api.main:app --port 8000)"
+    ]
+  }
+}

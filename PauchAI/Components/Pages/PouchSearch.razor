@@ -1,0 +1,329 @@
+@page "/pouch-search"
+@rendermode InteractiveServer
+@using PauchAI.Models
+@using PauchAI.Services
+@inject PouchPredictionService PredictionService
+@inject NavigationManager Nav
+
+<PageTitle>Pouch Semantic Search</PageTitle>
+
+<div class="container-fluid py-4">
+
+    <!-- ── Header ── -->
+    <div class="row mb-4">
+        <div class="col">
+            <h2 class="fw-bold mb-1">Semantic Pouch Search</h2>
+            <p class="text-muted small mb-0">
+                Describe what you need in plain language — the AI finds the closest matching pouches.
+            </p>
+        </div>
+    </div>
+
+    <!-- ── Search bar ── -->
+    <div class="row justify-content-center mb-3">
+        <div class="col-lg-9">
+            <div class="input-group input-group-lg shadow-sm">
+                <span class="input-group-text bg-white border-end-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor"
+                         class="bi bi-search text-secondary" viewBox="0 0 16 16">
+                        <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.099zm-5.44 1.406A5.5 5.5 0 1 1 16 6.5a5.5 5.5 0 0 1-10.698 1.25z"/>
+                    </svg>
+                </span>
+                <input @bind="QueryText" @bind:event="oninput"
+                       @onkeydown="OnKeyDown"
+                       class="form-control border-start-0 border-end-0 ps-0"
+                       placeholder='Try: "500g food pouch with zip lock" or "eco-friendly coffee bag"'
+                       disabled="@IsLoading" />
+                <button class="btn btn-primary px-4" @onclick="RunSearchAsync" disabled="@(IsLoading || string.IsNullOrWhiteSpace(QueryText))">
+                    @if (IsLoading)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status"></span>
+                    }
+                    else
+                    {
+                        <span>Search</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Filter bar ── -->
+    <div class="row justify-content-center mb-4">
+        <div class="col-lg-9">
+            <div class="d-flex flex-wrap gap-3 align-items-center">
+
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="foodSafeSwitch" @bind="FoodSafeOnly" />
+                    <label class="form-check-label small" for="foodSafeSwitch">Food Safe only</label>
+                </div>
+
+                <select class="form-select form-select-sm w-auto" @bind="MaterialFilter">
+                    <option value="">All Materials</option>
+                    <option value="PET+PE">PET+PE</option>
+                    <option value="BOPP+CPP">BOPP+CPP</option>
+                    <option value="PET+ALU+PE">PET+ALU+PE</option>
+                    <option value="MET BOPP+CPP">MET BOPP+CPP</option>
+                    <option value="LDPE">LDPE</option>
+                    <option value="NYLON+PE">NYLON+PE</option>
+                    <option value="Kraft+PE">Kraft+PE</option>
+                    <option value="Paper">Paper</option>
+                    <option value="Foil">Foil</option>
+                </select>
+
+                <select class="form-select form-select-sm w-auto" @bind="ZipFilter">
+                    <option value="">Zip Lock: Any</option>
+                    <option value="yes">With Zip Lock</option>
+                    <option value="no">Without Zip Lock</option>
+                </select>
+
+                <select class="form-select form-select-sm w-auto" @bind="LimitStr">
+                    <option value="5">Top 5</option>
+                    <option value="10">Top 10</option>
+                    <option value="15">Top 15</option>
+                </select>
+
+                @if (HasResults)
+                {
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="Clear">Clear</button>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Error ── -->
+    @if (ErrorMessage is not null)
+    {
+        <div class="row justify-content-center mb-3">
+            <div class="col-lg-9">
+                <div class="alert alert-danger">@ErrorMessage</div>
+            </div>
+        </div>
+    }
+
+    <!-- ── Example queries (shown before first search) ── -->
+    @if (!HasResults && !IsLoading && ErrorMessage is null)
+    {
+        <div class="row justify-content-center">
+            <div class="col-lg-9">
+                <p class="text-muted small mb-2">Try one of these:</p>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var ex in Examples)
+                    {
+                        <button class="btn btn-sm btn-outline-secondary rounded-pill"
+                                @onclick="() => UseExample(ex)">@ex</button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- ── Results ── -->
+    @if (HasResults)
+    {
+        <div class="row justify-content-center mb-2">
+            <div class="col-lg-9">
+                <p class="text-muted small">
+                    <strong>@Results.Count result@(Results.Count != 1 ? "s" : "")</strong>
+                    for &ldquo;<em>@LastQuery</em>&rdquo;
+                </p>
+            </div>
+        </div>
+
+        <div class="row justify-content-center g-3">
+            <div class="col-lg-9">
+                @foreach (var r in Results)
+                {
+                    <div class="card shadow-sm mb-3 border-0 border-start border-4 @SimilarityBorderClass(r.Similarity)">
+                        <div class="card-body">
+
+                            <!-- Top row: score + badges -->
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <span class="badge @SimilarityBadgeClass(r.Similarity) fs-6">
+                                        @((r.Similarity * 100).ToString("N0"))% match
+                                    </span>
+                                    <span class="badge bg-secondary">@r.PouchType</span>
+                                    <span class="badge bg-info text-dark">@r.MaterialType</span>
+                                    @if (r.ZipLock == "yes")
+                                    {
+                                        <span class="badge bg-success">Zip Lock</span>
+                                    }
+                                    @if (r.FoodGrade == "yes")
+                                    {
+                                        <span class="badge bg-warning text-dark">Food Safe</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(r.BarrierLevel))
+                                    {
+                                        <span class="badge bg-light text-dark border">@r.BarrierLevel barrier</span>
+                                    }
+                                </div>
+                                <span class="text-muted small">#@r.Id</span>
+                            </div>
+
+                            <!-- Item name + category -->
+                            @if (!string.IsNullOrEmpty(r.ItemName))
+                            {
+                                <h6 class="mb-1 fw-semibold">@r.ItemName
+                                    @if (!string.IsNullOrEmpty(r.ItemCategory))
+                                    {
+                                        <span class="text-muted fw-normal small ms-1">(@r.ItemCategory)</span>
+                                    }
+                                </h6>
+                            }
+
+                            <!-- Description (truncated) -->
+                            <p class="small text-muted mb-3" style="line-height:1.5">
+                                @(r.Description.Length > 220 ? r.Description[..220] + "…" : r.Description)
+                            </p>
+
+                            <!-- Spec grid -->
+                            <div class="row g-2 mb-3 small">
+                                <div class="col-6 col-md-3">
+                                    <div class="text-muted">Size</div>
+                                    <strong>@r.Width &times; @r.Height cm
+                                        @(r.Gusset > 0 ? $"+{r.Gusset}G" : "")</strong>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="text-muted">Thickness</div>
+                                    <strong>@r.Thickness µm</strong>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="text-muted">Printing</div>
+                                    <strong>@r.PrintingType</strong>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="text-muted">Qty / Shelf life</div>
+                                    <strong>@r.Quantity.ToString("N0") / @r.ShelfLifeMonths mo</strong>
+                                </div>
+                            </div>
+
+                            @if (r.CostPerPouch > 0)
+                            {
+                                <div class="mb-3 small">
+                                    <span class="text-muted">Est. cost:</span>
+                                    <strong class="text-success">₹@r.CostPerPouch.ToString("N2") / pouch</strong>
+                                </div>
+                            }
+
+                            <!-- Similarity bar -->
+                            <div class="progress mb-3" style="height:5px">
+                                <div class="progress-bar @SimilarityBarClass(r.Similarity)"
+                                     style="width:@((r.Similarity * 100).ToString("N0"))%"></div>
+                            </div>
+
+                            <!-- Action button -->
+                            <a href="@r.CostPredictorUrl" class="btn btn-sm btn-outline-primary">
+                                Estimate Cost &rarr;
+                            </a>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    private string QueryText   = "";
+    private string LastQuery   = "";
+    private bool   FoodSafeOnly;
+    private string MaterialFilter = "";
+    private string ZipFilter      = "";
+    private string LimitStr       = "5";
+    private bool   IsLoading;
+    private string? ErrorMessage;
+    private List<SearchResult> Results = [];
+
+    private bool HasResults => Results.Count > 0;
+
+    private static readonly string[] Examples =
+    [
+        "500g food pouch with zip lock for snacks",
+        "eco-friendly coffee bag 1kg",
+        "stand-up transparent pouch for dry fruits",
+        "protein powder flat bottom pouch high barrier",
+        "small 100g spice sachet",
+        "resealable pet food bag",
+        "agri fertilizer side gusset pouch",
+        "aluminium foil pouch for pharmaceuticals",
+        "chips center seal pouch 50g",
+    ];
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await RunSearchAsync();
+    }
+
+    private async Task UseExample(string example)
+    {
+        QueryText = example;
+        await RunSearchAsync();
+    }
+
+    private void Clear()
+    {
+        QueryText     = "";
+        LastQuery     = "";
+        Results       = [];
+        ErrorMessage  = null;
+    }
+
+    private async Task RunSearchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(QueryText)) return;
+
+        IsLoading    = true;
+        ErrorMessage = null;
+        Results      = [];
+        LastQuery    = QueryText.Trim();
+
+        try
+        {
+            var query = new SearchQuery
+            {
+                Query        = LastQuery,
+                Limit        = int.Parse(LimitStr),
+                FoodSafeOnly = FoodSafeOnly,
+                MaterialType = string.IsNullOrEmpty(MaterialFilter) ? null : MaterialFilter,
+                ZipLock      = string.IsNullOrEmpty(ZipFilter) ? null : ZipFilter,
+            };
+            Results = await PredictionService.SearchAsync(query);
+        }
+        catch (HttpRequestException)
+        {
+            ErrorMessage = "Cannot reach the prediction service. Make sure the Python API is running on port 8000.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private static string SimilarityBorderClass(double s) => s switch
+    {
+        >= 0.75 => "border-success",
+        >= 0.55 => "border-primary",
+        _       => "border-warning",
+    };
+
+    private static string SimilarityBadgeClass(double s) => s switch
+    {
+        >= 0.75 => "bg-success",
+        >= 0.55 => "bg-primary",
+        _       => "bg-warning text-dark",
+    };
+
+    private static string SimilarityBarClass(double s) => s switch
+    {
+        >= 0.75 => "bg-success",
+        >= 0.55 => "bg-primary",
+        _       => "bg-warning",
+    };
+}

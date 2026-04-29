@@ -1,0 +1,295 @@
+@page "/excel-predict"
+@rendermode InteractiveServer
+@using PauchAI.Models
+@using PauchAI.Services
+@inject PouchPredictionService PredictionService
+@inject ExcelParserService ExcelParser
+
+<PageTitle>Excel Batch Predictor</PageTitle>
+
+<div class="container-fluid py-4">
+
+    <div class="row mb-3">
+        <div class="col">
+            <h2 class="fw-bold mb-1">Excel Batch Predictor</h2>
+            <p class="text-muted small mb-0">
+                Upload an Excel file with multiple pouch configurations — get predicted cost for every row instantly.
+            </p>
+        </div>
+    </div>
+
+    <!-- ── Upload Card ── -->
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+
+                    <label class="upload-zone d-flex flex-column align-items-center justify-content-center
+                                  border border-2 border-dashed rounded-3 py-5 px-3 mb-3
+                                  @(IsDragging ? "border-primary bg-primary bg-opacity-10" : "border-secondary")"
+                           style="cursor:pointer; min-height:160px; transition: all .2s;"
+                           @ondragenter="OnDragEnter" @ondragleave="OnDragLeave" @ondragover:preventDefault="true">
+
+                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="currentColor"
+                             class="bi bi-file-earmark-spreadsheet text-secondary mb-2" viewBox="0 0 16 16">
+                            <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2zM9.5 3A1.5 1.5 0 0 0 11 4.5h2V9H3V2a1 1 0 0 1 1-1h5.5v2zM3 12v-2h2v2H3zm0 1h2v2H4a1 1 0 0 1-1-1v-1zm3 2v-2h3v2H6zm4 0v-2h3v1a1 1 0 0 1-1 1h-2zm3-3h-3v-2h3v2zm-7 0v-2h3v2H6z"/>
+                        </svg>
+
+                        @if (SelectedFileName is not null)
+                        {
+                            <span class="fw-semibold text-primary">@SelectedFileName</span>
+                            <span class="text-muted small mt-1">Click to change file</span>
+                        }
+                        else
+                        {
+                            <span class="fw-semibold">Click to select or drag &amp; drop</span>
+                            <span class="text-muted small mt-1">.xlsx files only &mdash; max 10 MB</span>
+                        }
+
+                        <InputFile OnChange="OnFileSelected" accept=".xlsx"
+                                   style="position:absolute; width:100%; height:100%; opacity:0; cursor:pointer;" />
+                    </label>
+
+                    <!-- Expected columns hint -->
+                    <div class="alert alert-info py-2 px-3 mb-3 small">
+                        <strong>Expected column headers</strong> (names are flexible):<br />
+                        <code>width &nbsp; height &nbsp; gusset &nbsp; material_type &nbsp; thickness &nbsp;
+                              printing_type &nbsp; quantity &nbsp; pouch_type &nbsp; zip_lock</code>
+                    </div>
+
+                    <button class="btn btn-primary btn-lg w-100"
+                            @onclick="RunPredictionAsync"
+                            disabled="@(SelectedFile is null || IsLoading)">
+                        @if (IsLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            <span>Predicting...</span>
+                        }
+                        else
+                        {
+                            <span>Upload &amp; Predict</span>
+                        }
+                    </button>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Parse Errors ── -->
+    @if (ParseErrors.Any())
+    {
+        <div class="row mb-3">
+            <div class="col-lg-8">
+                <div class="alert alert-warning">
+                    <strong>@ParseErrors.Count warning(s) while reading the file:</strong>
+                    <ul class="mb-0 mt-1">
+                        @foreach (var e in ParseErrors)
+                        {
+                            <li>@e</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (ApiError is not null)
+    {
+        <div class="row mb-3">
+            <div class="col-lg-8">
+                <div class="alert alert-danger">
+                    <strong>Prediction failed.</strong> @ApiError
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- ── Results ── -->
+    @if (Results.Any())
+    {
+        <!-- Summary cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="card text-center shadow-sm">
+                    <div class="card-body py-3">
+                        <div class="fs-1 fw-bold text-primary">@Results.Count</div>
+                        <div class="text-muted small">Rows Predicted</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center shadow-sm">
+                    <div class="card-body py-3">
+                        <div class="fs-4 fw-bold text-success">&#8377;@Results.Average(r => r.PredictedCostPerPouch).ToString("N2")</div>
+                        <div class="text-muted small">Avg Cost / Pouch</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center shadow-sm">
+                    <div class="card-body py-3">
+                        <div class="fs-4 fw-bold text-info">&#8377;@Results.Min(r => r.PredictedCostPerPouch).ToString("N2")</div>
+                        <div class="text-muted small">Min Cost / Pouch</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center shadow-sm">
+                    <div class="card-body py-3">
+                        <div class="fs-4 fw-bold text-danger">&#8377;@Results.Max(r => r.PredictedCostPerPouch).ToString("N2")</div>
+                        <div class="text-muted small">Max Cost / Pouch</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Total order value -->
+        <div class="row mb-4">
+            <div class="col-lg-8">
+                <div class="card bg-success text-white shadow-sm">
+                    <div class="card-body d-flex justify-content-between align-items-center py-3">
+                        <span class="fw-semibold fs-5">Total Order Value (all rows)</span>
+                        <span class="fs-4 fw-bold">&#8377;@Results.Sum(r => r.TotalEstimatedCost).ToString("N2")</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results table -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-light">
+                        <span class="fw-semibold">Prediction Results — @SelectedFileName</span>
+                        <span class="badge bg-secondary">@Results.Count rows</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0 align-middle small">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Size (cm)</th>
+                                    <th>Material</th>
+                                    <th>Thick.</th>
+                                    <th>Type</th>
+                                    <th>Printing</th>
+                                    <th>Zip</th>
+                                    <th class="text-end">Qty</th>
+                                    <th class="text-end fw-bold">&#8377; / Pouch</th>
+                                    <th class="text-end">Total (&#8377;)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var r in Results)
+                                {
+                                    <tr>
+                                        <td class="text-muted">@r.RowNumber</td>
+                                        <td>@r.Input.Width &times; @r.Input.Height
+                                            @if (r.Input.Gusset > 0)
+                                            {
+                                                <span class="text-muted">&nbsp;+@r.Input.Gusset G</span>
+                                            }
+                                        </td>
+                                        <td><span class="badge bg-secondary">@r.Input.MaterialType</span></td>
+                                        <td>@r.Input.Thickness µm</td>
+                                        <td>@r.Input.PouchType</td>
+                                        <td>@r.Input.PrintingType</td>
+                                        <td>
+                                            @if (r.Input.ZipLock == "yes")
+                                            {
+                                                <span class="text-success fw-bold">&#10003;</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">&mdash;</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">@r.Input.Quantity.ToString("N0")</td>
+                                        <td class="text-end fw-bold @CostClass(r.PredictedCostPerPouch)">
+                                            @r.PredictedCostPerPouch.ToString("N4")
+                                        </td>
+                                        <td class="text-end">@r.TotalEstimatedCost.ToString("N2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    private IBrowserFile? SelectedFile;
+    private string? SelectedFileName;
+    private bool IsLoading;
+    private bool IsDragging;
+    private string? ApiError;
+    private List<string> ParseErrors = [];
+    private List<BatchPredictionRow> Results = [];
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        SelectedFile     = e.File;
+        SelectedFileName = e.File.Name;
+        Results          = [];
+        ParseErrors      = [];
+        ApiError         = null;
+    }
+
+    private void OnDragEnter() => IsDragging = true;
+    private void OnDragLeave() => IsDragging = false;
+
+    private async Task RunPredictionAsync()
+    {
+        if (SelectedFile is null) return;
+
+        IsLoading   = true;
+        ApiError    = null;
+        ParseErrors = [];
+        Results     = [];
+
+        try
+        {
+            await using var stream = SelectedFile.OpenReadStream(maxAllowedSize: 10_485_760);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+
+            var (inputs, errors) = ExcelParser.Parse(ms);
+            ParseErrors = errors;
+
+            if (inputs.Count == 0)
+            {
+                ApiError = "No valid rows found in the file. Check the column headers.";
+                return;
+            }
+
+            Results = await PredictionService.PredictBatchAsync(inputs);
+        }
+        catch (HttpRequestException)
+        {
+            ApiError = "Cannot reach the prediction service. Make sure the Python API is running on port 8000.";
+        }
+        catch (Exception ex)
+        {
+            ApiError = ex.Message;
+        }
+        finally
+        {
+            IsLoading   = false;
+            IsDragging  = false;
+        }
+    }
+
+    private static string CostClass(double cost) => cost switch
+    {
+        < 5    => "text-success",
+        < 20   => "text-primary",
+        < 50   => "text-warning",
+        _      => "text-danger",
+    };
+}
