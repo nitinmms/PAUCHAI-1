@@ -13,6 +13,7 @@ builder.Services.AddHttpClient<PouchPredictionService>(client =>
 });
 
 builder.Services.AddScoped<ExcelParserService>();
+builder.Services.AddScoped<PouchMasterService>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

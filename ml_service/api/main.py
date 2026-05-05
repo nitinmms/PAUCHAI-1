@@ -20,24 +20,25 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from embeddings import load_model as load_embedding_model, embed
 
 MODEL_PATH = Path(__file__).parent.parent / "models" / "pouch_cost_model.joblib"
 
-_cost_model = None
+# Load models at import time (synchronously, before the event loop starts).
+# This avoids a segfault caused by XGBoost+sentence-transformers initialising
+# OpenMP inside an asyncio/uvloop context.
+if not MODEL_PATH.exists():
+    raise RuntimeError(
+        f"Model not found at {MODEL_PATH}. Run 'python src/train.py' first."
+    )
+_cost_model = joblib.load(MODEL_PATH)
+
+from embeddings import load_model as _load_embedding_model, embed  # noqa: E402
+_load_embedding_model()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _cost_model
-    if not MODEL_PATH.exists():
-        raise RuntimeError(
-            f"Model not found at {MODEL_PATH}. Run 'python src/train.py' first."
-        )
-    _cost_model = joblib.load(MODEL_PATH)
-    load_embedding_model()   # warm up sentence-transformer
     yield
-    _cost_model = None
 
 
 app = FastAPI(

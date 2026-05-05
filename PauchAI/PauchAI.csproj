@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.102.2" />
+    <PackageReference Include="Npgsql" Version="10.0.2" />
     <PackageReference Include="System.IO.Packaging" Version="8.0.1" />
   </ItemGroup>
 

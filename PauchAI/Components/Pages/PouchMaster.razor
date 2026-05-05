@@ -1,0 +1,461 @@
+@page "/pouch-master"
+@rendermode InteractiveServer
+@using PauchAI.Models
+@using PauchAI.Services
+@inject PouchMasterService MasterService
+
+<PageTitle>Pouch Master</PageTitle>
+
+<div class="container-fluid py-4">
+
+    <!-- Header -->
+    <div class="row mb-3 align-items-center">
+        <div class="col">
+            <h2 class="fw-bold mb-0">Pouch Master</h2>
+            <p class="text-muted small mb-0">Manage your pouch items catalogue.</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" @onclick="OpenAddModal">
+                <span class="bi bi-plus-lg me-1"></span> Add Pouch Item
+            </button>
+        </div>
+    </div>
+
+    <!-- Error / Success -->
+    @if (ErrorMessage is not null)
+    {
+        <div class="alert alert-danger alert-dismissible">
+            @ErrorMessage
+            <button type="button" class="btn-close" @onclick="() => ErrorMessage = null"></button>
+        </div>
+    }
+    @if (SuccessMessage is not null)
+    {
+        <div class="alert alert-success alert-dismissible">
+            @SuccessMessage
+            <button type="button" class="btn-close" @onclick="() => SuccessMessage = null"></button>
+        </div>
+    }
+
+    <!-- Search bar -->
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <input class="form-control" placeholder="Search by name, category, material…"
+                   @bind="SearchTerm" @bind:event="oninput" />
+        </div>
+    </div>
+
+    <!-- Table -->
+    @if (IsLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+        </div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <div class="alert alert-info">No pouch items found.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered align-middle small">
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>Item Name</th>
+                        <th>Category</th>
+                        <th>Pouch Type</th>
+                        <th>Material</th>
+                        <th>Size (cm)</th>
+                        <th>Thickness (µm)</th>
+                        <th>Printing</th>
+                        <th>Zip</th>
+                        <th>Qty</th>
+                        <th>Est. Cost/Pouch</th>
+                        <th>Actual Cost/Pouch</th>
+                        <th>Created</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Filtered)
+                    {
+                        <tr>
+                            <td class="text-muted">@item.Id</td>
+                            <td><strong>@item.ItemName</strong></td>
+                            <td>@item.ItemCategory</td>
+                            <td><span class="badge bg-secondary">@item.PouchType</span></td>
+                            <td><span class="badge bg-info text-dark">@item.MaterialType</span></td>
+                            <td>@item.WidthCm × @item.HeightCm@(item.GussetCm > 0 ? $"+{item.GussetCm}G" : "")</td>
+                            <td>@item.ThicknessMicron</td>
+                            <td>@item.PrintingType</td>
+                            <td>
+                                @if (item.ZipLock)
+                                {
+                                    <span class="badge bg-success">Yes</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-light text-dark border">No</span>
+                                }
+                            </td>
+                            <td>@item.Quantity?.ToString("N0")</td>
+                            <td class="text-success fw-semibold">
+                                @(item.EstimatedCostPerPouch.HasValue ? $"₹{item.EstimatedCostPerPouch:N2}" : "-")
+                            </td>
+                            <td class="text-primary fw-semibold">
+                                @(item.ActualCostPerPouch.HasValue ? $"₹{item.ActualCostPerPouch:N2}" : "-")
+                            </td>
+                            <td class="text-muted">@item.CreatedAt.ToString("dd MMM yyyy")</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => OpenEditModal(item)">Edit</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(item)">Del</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="text-muted small">Showing @Filtered.Count of @Items.Count records.</p>
+    }
+
+</div>
+
+<!-- Add / Edit Modal -->
+@if (ShowModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,.5)">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(IsEditing ? "Edit Pouch Item" : "Add Pouch Item")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+
+                        <div class="col-md-6">
+                            <label class="form-label">Item Name</label>
+                            <input class="form-control" @bind="Form.ItemName" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Category</label>
+                            <input class="form-control" @bind="Form.ItemCategory" />
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">Pouch Type</label>
+                            <select class="form-select" @bind="Form.PouchType">
+                                <option value="">-- Select --</option>
+                                <option>3-side-seal</option>
+                                <option>stand-up</option>
+                                <option>center-seal</option>
+                                <option>flat-bottom</option>
+                                <option>side-gusset</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Material Type</label>
+                            <select class="form-select" @bind="Form.MaterialType">
+                                <option value="">-- Select --</option>
+                                <option>PET+PE</option>
+                                <option>BOPP+CPP</option>
+                                <option>PET+ALU+PE</option>
+                                <option>MET BOPP+CPP</option>
+                                <option>LDPE</option>
+                                <option>NYLON+PE</option>
+                                <option>Kraft+PE</option>
+                                <option>Paper</option>
+                                <option>Foil</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Printing Type</label>
+                            <select class="form-select" @bind="Form.PrintingType">
+                                <option value="">-- Select --</option>
+                                <option>none</option>
+                                <option>flexo</option>
+                                <option>rotogravure</option>
+                                <option>digital</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Width (cm)</label>
+                            <input type="number" class="form-control" @bind="Form.WidthCm" step="0.01" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Height (cm)</label>
+                            <input type="number" class="form-control" @bind="Form.HeightCm" step="0.01" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Gusset (cm)</label>
+                            <input type="number" class="form-control" @bind="Form.GussetCm" step="0.01" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Thickness (µm)</label>
+                            <input type="number" class="form-control" @bind="Form.ThicknessMicron" step="0.01" />
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Product Weight (g)</label>
+                            <input type="number" class="form-control" @bind="Form.ProductWeightG" step="0.01" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Quantity</label>
+                            <input type="number" class="form-control" @bind="Form.Quantity" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Material Cost/kg (₹)</label>
+                            <input type="number" class="form-control" @bind="Form.MaterialCostPerKg" step="0.01" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Zip Lock</label>
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" @bind="Form.ZipLock" />
+                                <label class="form-check-label">@(Form.ZipLock ? "Yes" : "No")</label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Estimated Cost/Pouch (₹)</label>
+                            <input type="number" class="form-control" @bind="Form.EstimatedCostPerPouch" step="0.0001" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Actual Cost/Pouch (₹)</label>
+                            <input type="number" class="form-control" @bind="Form.ActualCostPerPouch" step="0.0001" />
+                        </div>
+
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label mb-0">Semantic Description</label>
+                                <button type="button" class="btn btn-sm btn-outline-success" @onclick="GenerateDescription" disabled="@IsGenerating">
+                                    @if (IsGenerating)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                    }
+                                    else
+                                    {
+                                        <span>✨</span>
+                                    }
+                                    Gen AI
+                                </button>
+                            </div>
+                            <textarea class="form-control" rows="3" @bind="Form.SemanticDescription"
+                                      placeholder="Click Gen AI to auto-generate from the fields above, or type manually."></textarea>
+                        </div>
+
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveAsync" disabled="@IsSaving">
+                        @if (IsSaving)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        @(IsEditing ? "Save Changes" : "Add Item")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Delete Confirmation Modal -->
+@if (DeleteTarget is not null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger">Confirm Delete</h5>
+                    <button type="button" class="btn-close" @onclick="() => DeleteTarget = null"></button>
+                </div>
+                <div class="modal-body">
+                    Are you sure you want to delete <strong>@DeleteTarget.ItemName</strong> (ID: @DeleteTarget.Id)?
+                    This cannot be undone.
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => DeleteTarget = null">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ExecuteDeleteAsync" disabled="@IsSaving">
+                        @if (IsSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<PouchItem> Items = [];
+    private PouchItem Form = new();
+    private PouchItem? DeleteTarget;
+
+    private bool IsLoading    = true;
+    private bool ShowModal    = false;
+    private bool IsEditing    = false;
+    private bool IsSaving     = false;
+    private bool IsGenerating = false;
+    private string? ErrorMessage;
+    private string? SuccessMessage;
+    private string SearchTerm = "";
+
+    private List<PouchItem> Filtered => string.IsNullOrWhiteSpace(SearchTerm)
+        ? Items
+        : Items.Where(i =>
+            (i.ItemName?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (i.ItemCategory?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (i.MaterialType?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (i.PouchType?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false))
+          .ToList();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+        ErrorMessage = null;
+        try { Items = await MasterService.GetAllAsync(); }
+        catch (Exception ex) { ErrorMessage = $"Failed to load: {ex.Message}"; }
+        finally { IsLoading = false; }
+    }
+
+    private void OpenAddModal()
+    {
+        Form = new PouchItem();
+        IsEditing = false;
+        ShowModal = true;
+        ErrorMessage = null;
+    }
+
+    private void OpenEditModal(PouchItem item)
+    {
+        Form = new PouchItem
+        {
+            Id                    = item.Id,
+            ItemName              = item.ItemName,
+            ItemCategory          = item.ItemCategory,
+            ProductWeightG        = item.ProductWeightG,
+            PouchType             = item.PouchType,
+            MaterialType          = item.MaterialType,
+            WidthCm               = item.WidthCm,
+            HeightCm              = item.HeightCm,
+            GussetCm              = item.GussetCm,
+            ThicknessMicron       = item.ThicknessMicron,
+            PrintingType          = item.PrintingType,
+            ZipLock               = item.ZipLock,
+            Quantity              = item.Quantity,
+            MaterialCostPerKg     = item.MaterialCostPerKg,
+            EstimatedCostPerPouch = item.EstimatedCostPerPouch,
+            ActualCostPerPouch    = item.ActualCostPerPouch,
+            SemanticDescription   = item.SemanticDescription,
+        };
+        IsEditing = true;
+        ShowModal = true;
+        ErrorMessage = null;
+    }
+
+    private void CloseModal()
+    {
+        ShowModal = false;
+        ErrorMessage = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        IsSaving = true;
+        ErrorMessage = null;
+        try
+        {
+            if (IsEditing)
+            {
+                await MasterService.UpdateAsync(Form);
+                SuccessMessage = $"'{Form.ItemName}' updated successfully.";
+            }
+            else
+            {
+                await MasterService.CreateAsync(Form);
+                SuccessMessage = $"'{Form.ItemName}' added successfully.";
+            }
+            ShowModal = false;
+            await LoadAsync();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsSaving = false; }
+    }
+
+    private void ConfirmDelete(PouchItem item)
+    {
+        DeleteTarget = item;
+        ErrorMessage = null;
+    }
+
+    private async Task ExecuteDeleteAsync()
+    {
+        if (DeleteTarget is null) return;
+        IsSaving = true;
+        try
+        {
+            await MasterService.DeleteAsync(DeleteTarget.Id);
+            SuccessMessage = $"Item #{DeleteTarget.Id} deleted.";
+            DeleteTarget = null;
+            await LoadAsync();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsSaving = false; }
+    }
+
+    private async Task GenerateDescription()
+    {
+        IsGenerating = true;
+        await Task.Delay(300);
+
+        var parts = new List<string>();
+
+        var name = string.IsNullOrWhiteSpace(Form.ItemName) ? "pouch" : Form.ItemName.Trim();
+        var cat  = string.IsNullOrWhiteSpace(Form.ItemCategory) ? "" : $" for {Form.ItemCategory.Trim()}";
+        parts.Add($"{name}{cat}");
+
+        if (!string.IsNullOrWhiteSpace(Form.PouchType))
+            parts.Add($"{Form.PouchType} style pouch");
+
+        if (!string.IsNullOrWhiteSpace(Form.MaterialType))
+            parts.Add($"made of {Form.MaterialType} material");
+
+        if (Form.WidthCm.HasValue && Form.HeightCm.HasValue)
+        {
+            var size = $"{Form.WidthCm:G29}cm × {Form.HeightCm:G29}cm";
+            if (Form.GussetCm is > 0)
+                size += $" with {Form.GussetCm:G29}cm gusset";
+            parts.Add(size);
+        }
+
+        if (Form.ThicknessMicron.HasValue)
+            parts.Add($"{Form.ThicknessMicron:G29} micron thickness");
+
+        if (!string.IsNullOrWhiteSpace(Form.PrintingType) && Form.PrintingType != "none")
+            parts.Add($"{Form.PrintingType} printing");
+        else if (Form.PrintingType == "none")
+            parts.Add("no printing");
+
+        parts.Add(Form.ZipLock ? "with zip lock resealable" : "without zip lock");
+
+        if (Form.ProductWeightG.HasValue)
+            parts.Add($"suitable for {Form.ProductWeightG:G29}g product");
+
+        if (Form.Quantity.HasValue)
+            parts.Add($"order quantity {Form.Quantity:N0} units");
+
+        if (Form.MaterialCostPerKg.HasValue)
+            parts.Add($"material cost ₹{Form.MaterialCostPerKg:N2}/kg");
+
+        if (Form.EstimatedCostPerPouch.HasValue)
+            parts.Add($"estimated ₹{Form.EstimatedCostPerPouch:N4} per pouch");
+
+        Form.SemanticDescription = string.Join(", ", parts) + ".";
+        IsGenerating = false;
+    }
+}
