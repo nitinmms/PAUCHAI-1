@@ -234,7 +234,9 @@
 
                             @foreach (var rec in Recommendation.Recommendations)
                             {
-                                var medal = rec.Rank switch { 1 => "🥇", 2 => "🥈", _ => "🥉" };
+                                var medal   = rec.Rank switch { 1 => "🥇", 2 => "🥈", _ => "🥉" };
+                                var recId   = rec.Pouch.Id;
+                                var loading = ImageLoading.ContainsKey(recId) && ImageLoading[recId];
                                 <div class="mb-4 pb-3 border-bottom">
                                     <div class="d-flex align-items-start gap-2 mb-1">
                                         <span style="font-size:1.3rem">@medal</span>
@@ -256,10 +258,29 @@
                                             </span>
                                         }
                                     </div>
-                                    <p class="small text-muted mb-1 ms-1" style="line-height:1.5">@rec.Reasoning</p>
-                                    <a href="@rec.Pouch.CostPredictorUrl" class="btn btn-sm btn-outline-primary ms-1 mt-1">
-                                        Estimate Cost &rarr;
-                                    </a>
+                                    <p class="small text-muted mb-2 ms-1" style="line-height:1.5">@rec.Reasoning</p>
+                                    <div class="d-flex gap-2 ms-1 flex-wrap">
+                                        <a href="@rec.Pouch.CostPredictorUrl" class="btn btn-sm btn-outline-primary">
+                                            Estimate Cost &rarr;
+                                        </a>
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                @onclick="() => VisualizeAsync(rec)"
+                                                disabled="@loading">
+                                            @if (loading)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                                <span>Generating…</span>
+                                            }
+                                            else
+                                            {
+                                                <span>🎨 Visualize</span>
+                                            }
+                                        </button>
+                                    </div>
+                                    @if (ImageErrors.ContainsKey(recId))
+                                    {
+                                        <div class="alert alert-warning small mt-2 py-1 px-2">@ImageErrors[recId]</div>
+                                    }
                                 </div>
                             }
                         }
@@ -279,6 +300,24 @@
 
 </div>
 
+<!-- Image Modal -->
+@if (ModalImageUrl is not null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,.75)" @onclick="() => ModalImageUrl = null">
+        <div class="modal-dialog modal-lg modal-dialog-centered" @onclick:stopPropagation>
+            <div class="modal-content border-0">
+                <div class="modal-header">
+                    <h5 class="modal-title">🎨 @ModalImageTitle</h5>
+                    <button type="button" class="btn-close" @onclick="() => ModalImageUrl = null"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <img src="@ModalImageUrl" alt="@ModalImageTitle" class="img-fluid w-100 rounded-bottom" />
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private string QueryText    = "";
     private string LastQuery    = "";
@@ -292,6 +331,10 @@
     private string? RecommendError;
     private List<SearchResult> Results = [];
     private RecommendationResponse? Recommendation;
+    private Dictionary<int, bool>    ImageLoading = [];
+    private Dictionary<int, string>  ImageErrors  = [];
+    private string? ModalImageUrl;
+    private string? ModalImageTitle;
 
     private bool HasResults => Results.Count > 0;
 
@@ -327,6 +370,9 @@
         Recommendation = null;
         RecommendError = null;
         ErrorMessage   = null;
+        ImageLoading   = [];
+        ImageErrors    = [];
+        ModalImageUrl  = null;
     }
 
     private async Task RunSearchAsync()
@@ -394,6 +440,29 @@
         {
             IsRecommending = false;
             await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task VisualizeAsync(PouchRecommendation rec)
+    {
+        var id = rec.Pouch.Id;
+        ImageLoading[id] = true;
+        ImageErrors.Remove(id);
+        StateHasChanged();
+        try
+        {
+            var url = await RecommendationService.GenerateImageAsync(rec);
+            ModalImageUrl   = url;
+            ModalImageTitle = rec.Pouch.ItemName ?? $"Pouch #{id}";
+        }
+        catch (Exception ex)
+        {
+            ImageErrors[id] = $"Image generation failed: {ex.Message}";
+        }
+        finally
+        {
+            ImageLoading[id] = false;
+            StateHasChanged();
         }
     }
 

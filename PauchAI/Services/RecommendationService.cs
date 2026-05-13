@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using OpenAI.Chat;
+using OpenAI.Images;
 using PauchAI.Models;
 
 namespace PauchAI.Services;
@@ -97,5 +98,45 @@ public class RecommendationService(IConfiguration config)
         }
 
         return new RecommendationResponse { Summary = summary, Recommendations = recs };
+    }
+
+    public async Task<string> GenerateImageAsync(PouchRecommendation rec)
+    {
+        var apiKey = config["OpenAI:ApiKey"] ?? "";
+        if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "YOUR_OPENAI_API_KEY_HERE")
+            throw new InvalidOperationException("OpenAI API key not configured.");
+
+        var p = rec.Pouch;
+        var prompt =
+            $"Professional product packaging photograph of a {p.PouchType} flexible pouch for {p.ItemName ?? "food product"}. " +
+            $"Material: {p.MaterialType}. Size: {p.Width}cm wide by {p.Height}cm tall" +
+            (p.Gusset > 0 ? $" with {p.Gusset}cm gusset" : "") + ". " +
+            (p.ZipLock == "yes" ? "Has a zip lock resealable closure. " : "") +
+            (p.FoodGrade == "yes" ? "Food-grade certified packaging. " : "") +
+            $"Printing style: {p.PrintingType}. " +
+            $"Context: {rec.Reasoning} " +
+            "Studio lighting, white background, photorealistic, high-quality commercial product photography.";
+
+        var imageModel = config["OpenAI:ImageModel"] ?? "gpt-image-1";
+        var client = new ImageClient(imageModel, apiKey);
+        var options = new ImageGenerationOptions
+        {
+            Size = GeneratedImageSize.W1024xH1024,
+        };
+
+        var result = await client.GenerateImageAsync(prompt, options);
+        var image  = result.Value;
+
+        // gpt-image-1 returns base64, older models return a URL
+        if (image.ImageUri is not null)
+            return image.ImageUri.ToString();
+
+        if (image.ImageBytes is not null)
+        {
+            var base64 = Convert.ToBase64String(image.ImageBytes.ToArray());
+            return $"data:image/png;base64,{base64}";
+        }
+
+        throw new InvalidOperationException("No image data returned from gpt-image-1.");
     }
 }
