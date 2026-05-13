@@ -3,25 +3,26 @@
 @using PauchAI.Models
 @using PauchAI.Services
 @inject PouchPredictionService PredictionService
+@inject RecommendationService RecommendationService
 @inject NavigationManager Nav
 
 <PageTitle>Pouch Semantic Search</PageTitle>
 
 <div class="container-fluid py-4">
 
-    <!-- ── Header ── -->
+    <!-- Header -->
     <div class="row mb-4">
         <div class="col">
-            <h2 class="fw-bold mb-1">Semantic Pouch Search</h2>
+            <h2 class="fw-bold mb-1">Pouch Search</h2>
             <p class="text-muted small mb-0">
                 Describe what you need in plain language — the AI finds the closest matching pouches.
             </p>
         </div>
     </div>
 
-    <!-- ── Search bar ── -->
-    <div class="row justify-content-center mb-3">
-        <div class="col-lg-9">
+    <!-- Search bar -->
+    <div class="row mb-3">
+        <div class="col-lg-8">
             <div class="input-group input-group-lg shadow-sm">
                 <span class="input-group-text bg-white border-end-0">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor"
@@ -48,17 +49,15 @@
         </div>
     </div>
 
-    <!-- ── Filter bar ── -->
-    <div class="row justify-content-center mb-4">
-        <div class="col-lg-9">
+    <!-- Filters -->
+    <div class="row mb-4">
+        <div class="col-lg-8">
             <div class="d-flex flex-wrap gap-3 align-items-center">
-
                 <div class="form-check form-switch mb-0">
                     <input class="form-check-input" type="checkbox" role="switch"
                            id="foodSafeSwitch" @bind="FoodSafeOnly" />
                     <label class="form-check-label small" for="foodSafeSwitch">Food Safe only</label>
                 </div>
-
                 <select class="form-select form-select-sm w-auto" @bind="MaterialFilter">
                     <option value="">All Materials</option>
                     <option value="PET+PE">PET+PE</option>
@@ -71,19 +70,16 @@
                     <option value="Paper">Paper</option>
                     <option value="Foil">Foil</option>
                 </select>
-
                 <select class="form-select form-select-sm w-auto" @bind="ZipFilter">
                     <option value="">Zip Lock: Any</option>
                     <option value="yes">With Zip Lock</option>
                     <option value="no">Without Zip Lock</option>
                 </select>
-
                 <select class="form-select form-select-sm w-auto" @bind="LimitStr">
                     <option value="5">Top 5</option>
                     <option value="10">Top 10</option>
                     <option value="15">Top 15</option>
                 </select>
-
                 @if (HasResults)
                 {
                     <button class="btn btn-sm btn-outline-secondary" @onclick="Clear">Clear</button>
@@ -92,21 +88,21 @@
         </div>
     </div>
 
-    <!-- ── Error ── -->
+    <!-- Error -->
     @if (ErrorMessage is not null)
     {
-        <div class="row justify-content-center mb-3">
-            <div class="col-lg-9">
+        <div class="row mb-3">
+            <div class="col-lg-8">
                 <div class="alert alert-danger">@ErrorMessage</div>
             </div>
         </div>
     }
 
-    <!-- ── Example queries (shown before first search) ── -->
+    <!-- Example queries -->
     @if (!HasResults && !IsLoading && ErrorMessage is null)
     {
-        <div class="row justify-content-center">
-            <div class="col-lg-9">
+        <div class="row">
+            <div class="col-lg-8">
                 <p class="text-muted small mb-2">Try one of these:</p>
                 <div class="d-flex flex-wrap gap-2">
                     @foreach (var ex in Examples)
@@ -119,26 +115,24 @@
         </div>
     }
 
-    <!-- ── Results ── -->
-    @if (HasResults)
+    <!-- Two-column results layout -->
+    @if (HasResults || IsRecommending)
     {
-        <div class="row justify-content-center mb-2">
-            <div class="col-lg-9">
-                <p class="text-muted small">
-                    <strong>@Results.Count result@(Results.Count != 1 ? "s" : "")</strong>
-                    for &ldquo;<em>@LastQuery</em>&rdquo;
-                </p>
-            </div>
-        </div>
+        <div class="row g-4">
 
-        <div class="row justify-content-center g-3">
-            <div class="col-lg-9">
+            <!-- LEFT: Semantic search results -->
+            <div class="col-lg-7">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <p class="text-muted small mb-0">
+                        <strong>@Results.Count result@(Results.Count != 1 ? "s" : "")</strong>
+                        for &ldquo;<em>@LastQuery</em>&rdquo;
+                    </p>
+                </div>
+
                 @foreach (var r in Results)
                 {
                     <div class="card shadow-sm mb-3 border-0 border-start border-4 @SimilarityBorderClass(r.Similarity)">
                         <div class="card-body">
-
-                            <!-- Top row: score + badges -->
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div class="d-flex gap-2 flex-wrap">
                                     <span class="badge @SimilarityBadgeClass(r.Similarity) fs-6">
@@ -146,23 +140,13 @@
                                     </span>
                                     <span class="badge bg-secondary">@r.PouchType</span>
                                     <span class="badge bg-info text-dark">@r.MaterialType</span>
-                                    @if (r.ZipLock == "yes")
-                                    {
-                                        <span class="badge bg-success">Zip Lock</span>
-                                    }
-                                    @if (r.FoodGrade == "yes")
-                                    {
-                                        <span class="badge bg-warning text-dark">Food Safe</span>
-                                    }
-                                    @if (!string.IsNullOrEmpty(r.BarrierLevel))
-                                    {
-                                        <span class="badge bg-light text-dark border">@r.BarrierLevel barrier</span>
-                                    }
+                                    @if (r.ZipLock == "yes") { <span class="badge bg-success">Zip Lock</span> }
+                                    @if (r.FoodGrade == "yes") { <span class="badge bg-warning text-dark">Food Safe</span> }
+                                    @if (!string.IsNullOrEmpty(r.BarrierLevel)) { <span class="badge bg-light text-dark border">@r.BarrierLevel barrier</span> }
                                 </div>
                                 <span class="text-muted small">#@r.Id</span>
                             </div>
 
-                            <!-- Item name + category -->
                             @if (!string.IsNullOrEmpty(r.ItemName))
                             {
                                 <h6 class="mb-1 fw-semibold">@r.ItemName
@@ -173,17 +157,14 @@
                                 </h6>
                             }
 
-                            <!-- Description (truncated) -->
                             <p class="small text-muted mb-3" style="line-height:1.5">
-                                @(r.Description.Length > 220 ? r.Description[..220] + "…" : r.Description)
+                                @(r.Description.Length > 200 ? r.Description[..200] + "…" : r.Description)
                             </p>
 
-                            <!-- Spec grid -->
-                            <div class="row g-2 mb-3 small">
+                            <div class="row g-2 mb-2 small">
                                 <div class="col-6 col-md-3">
                                     <div class="text-muted">Size</div>
-                                    <strong>@r.Width &times; @r.Height cm
-                                        @(r.Gusset > 0 ? $"+{r.Gusset}G" : "")</strong>
+                                    <strong>@r.Width × @r.Height cm@(r.Gusset > 0 ? $"+{r.Gusset}G" : "")</strong>
                                 </div>
                                 <div class="col-6 col-md-3">
                                     <div class="text-muted">Thickness</div>
@@ -201,41 +182,116 @@
 
                             @if (r.CostPerPouch > 0)
                             {
-                                <div class="mb-3 small">
+                                <div class="mb-2 small">
                                     <span class="text-muted">Est. cost:</span>
                                     <strong class="text-success">₹@r.CostPerPouch.ToString("N2") / pouch</strong>
                                 </div>
                             }
 
-                            <!-- Similarity bar -->
-                            <div class="progress mb-3" style="height:5px">
+                            <div class="progress mb-2" style="height:4px">
                                 <div class="progress-bar @SimilarityBarClass(r.Similarity)"
                                      style="width:@((r.Similarity * 100).ToString("N0"))%"></div>
                             </div>
 
-                            <!-- Action button -->
-                            <a href="@r.CostPredictorUrl" class="btn btn-sm btn-outline-primary">
-                                Estimate Cost &rarr;
-                            </a>
+                            <a href="@r.CostPredictorUrl" class="btn btn-sm btn-outline-primary">Estimate Cost &rarr;</a>
                         </div>
                     </div>
                 }
             </div>
+
+            <!-- RIGHT: AI Recommendation panel -->
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm h-100" style="position:sticky;top:1rem">
+                    <div class="card-header bg-dark text-white d-flex align-items-center gap-2">
+                        <span style="font-size:1.2rem">✨</span>
+                        <strong>AI Recommendation</strong>
+                        @if (IsRecommending)
+                        {
+                            <span class="spinner-border spinner-border-sm ms-auto" role="status"></span>
+                        }
+                    </div>
+                    <div class="card-body">
+
+                        @if (IsRecommending)
+                        {
+                            <div class="text-center py-4 text-muted">
+                                <div class="mb-2">Analysing results with GPT…</div>
+                                <small>This takes a few seconds</small>
+                            </div>
+                        }
+                        else if (RecommendError is not null)
+                        {
+                            <div class="alert alert-warning small">
+                                <strong>Recommendation unavailable:</strong><br />@RecommendError
+                            </div>
+                        }
+                        else if (Recommendation is not null)
+                        {
+                            @if (!string.IsNullOrEmpty(Recommendation.Summary))
+                            {
+                                <p class="text-muted small mb-3 fst-italic">"@Recommendation.Summary"</p>
+                            }
+
+                            @foreach (var rec in Recommendation.Recommendations)
+                            {
+                                var medal = rec.Rank switch { 1 => "🥇", 2 => "🥈", _ => "🥉" };
+                                <div class="mb-4 pb-3 border-bottom">
+                                    <div class="d-flex align-items-start gap-2 mb-1">
+                                        <span style="font-size:1.3rem">@medal</span>
+                                        <div>
+                                            <div class="fw-semibold">@rec.Pouch.ItemName
+                                                <span class="text-muted fw-normal small ms-1">(#@rec.Pouch.Id)</span>
+                                            </div>
+                                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                                <span class="badge bg-secondary" style="font-size:.7rem">@rec.Pouch.PouchType</span>
+                                                <span class="badge bg-info text-dark" style="font-size:.7rem">@rec.Pouch.MaterialType</span>
+                                                @if (rec.Pouch.ZipLock == "yes") { <span class="badge bg-success" style="font-size:.7rem">Zip Lock</span> }
+                                                @if (rec.Pouch.FoodGrade == "yes") { <span class="badge bg-warning text-dark" style="font-size:.7rem">Food Safe</span> }
+                                            </div>
+                                        </div>
+                                        @if (rec.Pouch.CostPerPouch > 0)
+                                        {
+                                            <span class="ms-auto text-success fw-semibold small text-nowrap">
+                                                ₹@rec.Pouch.CostPerPouch.ToString("N2")
+                                            </span>
+                                        }
+                                    </div>
+                                    <p class="small text-muted mb-1 ms-1" style="line-height:1.5">@rec.Reasoning</p>
+                                    <a href="@rec.Pouch.CostPredictorUrl" class="btn btn-sm btn-outline-primary ms-1 mt-1">
+                                        Estimate Cost &rarr;
+                                    </a>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="text-center text-muted py-4 small">
+                                Recommendations will appear here after you search.
+                            </div>
+                        }
+
+                    </div>
+                </div>
+            </div>
+
         </div>
     }
 
 </div>
 
 @code {
-    private string QueryText   = "";
-    private string LastQuery   = "";
+    private string QueryText    = "";
+    private string LastQuery    = "";
     private bool   FoodSafeOnly;
     private string MaterialFilter = "";
     private string ZipFilter      = "";
     private string LimitStr       = "5";
     private bool   IsLoading;
+    private bool   IsRecommending;
     private string? ErrorMessage;
+    private string? RecommendError;
     private List<SearchResult> Results = [];
+    private RecommendationResponse? Recommendation;
 
     private bool HasResults => Results.Count > 0;
 
@@ -265,20 +321,26 @@
 
     private void Clear()
     {
-        QueryText     = "";
-        LastQuery     = "";
-        Results       = [];
-        ErrorMessage  = null;
+        QueryText      = "";
+        LastQuery      = "";
+        Results        = [];
+        Recommendation = null;
+        RecommendError = null;
+        ErrorMessage   = null;
     }
 
     private async Task RunSearchAsync()
     {
         if (string.IsNullOrWhiteSpace(QueryText)) return;
 
-        IsLoading    = true;
-        ErrorMessage = null;
-        Results      = [];
-        LastQuery    = QueryText.Trim();
+        IsLoading      = true;
+        IsRecommending = false;
+        ErrorMessage   = null;
+        RecommendError = null;
+        Recommendation = null;
+        Results        = [];
+        LastQuery      = QueryText.Trim();
+        StateHasChanged();
 
         try
         {
@@ -288,21 +350,50 @@
                 Limit        = int.Parse(LimitStr),
                 FoodSafeOnly = FoodSafeOnly,
                 MaterialType = string.IsNullOrEmpty(MaterialFilter) ? null : MaterialFilter,
-                ZipLock      = string.IsNullOrEmpty(ZipFilter) ? null : ZipFilter,
+                ZipLock      = string.IsNullOrEmpty(ZipFilter)     ? null : ZipFilter,
             };
             Results = await PredictionService.SearchAsync(query);
         }
         catch (HttpRequestException)
         {
             ErrorMessage = "Cannot reach the prediction service. Make sure the Python API is running on port 8000.";
+            IsLoading = false;
+            return;
         }
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
+            IsLoading = false;
+            return;
         }
         finally
         {
             IsLoading = false;
+        }
+
+        // Kick off AI recommendation in parallel (don't block the search results render)
+        if (Results.Count > 0)
+        {
+            IsRecommending = true;
+            StateHasChanged();
+            _ = GetRecommendationAsync(LastQuery, Results);
+        }
+    }
+
+    private async Task GetRecommendationAsync(string query, List<SearchResult> results)
+    {
+        try
+        {
+            Recommendation = await RecommendationService.RecommendAsync(query, results);
+        }
+        catch (Exception ex)
+        {
+            RecommendError = ex.Message;
+        }
+        finally
+        {
+            IsRecommending = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
