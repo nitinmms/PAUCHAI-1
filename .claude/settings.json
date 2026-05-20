@@ -6,7 +6,13 @@
       "Bash(pip --version)",
       "Bash(curl -s http://localhost:8000/health)",
       "Bash(taskkill /F /IM python.exe)",
-      "Bash(python -m uvicorn api.main:app --port 8000)"
+      "Bash(python -m uvicorn api.main:app --port 8000)",
+      "Bash(git -C /Users/nitinsharma/PauchAI-1 remote -v)",
+      "Bash(git -C /Users/nitinsharma/PauchAI-1 log --oneline -5)",
+      "Bash(gh repo *)",
+      "Bash(git -C /Users/nitinsharma/PauchAI-1 remote add pauchai-1 https://github.com/nitinmms/PAUCHAI-1.git)",
+      "Bash(git -C /Users/nitinsharma/PauchAI-1 push pauchai-1 master)",
+      "Bash(git -C /Users/nitinsharma/PauchAI-1 diff .claude/settings.json)"
     ]
   }
 }
